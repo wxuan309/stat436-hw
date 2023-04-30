@@ -1,0 +1,99 @@
+---
+title: 'HW4: Model Visualization Portfolio Project'
+author: "Emma Chen"
+date: "2023-04-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Read and Clean Dataset
+
+```{r, message=FALSE}
+library(tidyverse)
+library(tidymodels)
+library(plotly)
+library(shiny)
+library(tidytext)
+theme_set(theme_bw())
+
+
+# read data set (retrieved from UCI Machine Learning Repository:
+# https://archive.ics.uci.edu/ml/datasets/student+performance)
+por <- read.table("https://github.com/wxuan309/stat436-hw2/raw/main/student/student-por.csv"
+                 , sep=";", header=TRUE)
+por$address_u <- ifelse(por$address == "U", 1, 0)
+por$address_r <- ifelse(por$address == "R", 1, 0)
+por <- por %>% 
+  select_if(is.numeric) %>% 
+  select(-G3)
+
+```
+
+
+## Modeling
+
+```{r}
+pca_recipe <- recipe(~., data = por) %>%
+  step_normalize(all_predictors()) %>%
+  step_pca(all_predictors())
+pca_prep <- prep(pca_recipe)
+
+variances <- tidy(pca_prep, 2, type = "variance") %>% 
+  filter(terms == "percent variance")
+
+pca_result <- tidy(pca_prep, 2)
+components_ <- pca_result %>%
+  filter(component %in% str_c("PC", 1:3)) %>%
+  mutate(terms = reorder_within(terms, abs(value), component))
+```
+
+## Visualization
+
+```{r}
+p1 <- ggplot(variances) +
+  geom_col(aes(component, value)) +
+  labs(y = "Percent Variance")
+
+p2 <- ggplot(components_, aes(value, terms)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ component, scales = "free_y") +
+  scale_y_reordered() +
+  labs(x = "Component", y = "Features")
+```
+
+
+## Shiny App
+
+```{r}
+
+text1 = "Retrieved from UCI Machine Learning Repository, the dataset documents students’ performance in the Portuguese language. It includes demographic, personal, and social features that may play a role in their achievement. Each observation represents a student and includes both numeric and categorical data. It has no missing values, and the three response variables are G1, G2, and G3, each representing a student’s performance for term 1, term 2, and term 3."
+
+text2 = "In the following Principal component analysis (PCA), I disregard the G3 column to treat it as our target variable and select all of the numeric columns and the address column by converting it into a dummy variable. As the address column conveys whether students live in urban or rural areas, it ties to the issue of the existing geographical inequality in the allocation of resources among cities and suburban areas. Students obtain segregated opportunities by the location of their household. With this in mind, I think it will serve as an important indicator of the performance of students. Following the PCA, below, the histogram visualizes how much percentage variance is explained by each dimension of the PCA. We can see that the first three components preserve most of the information. After that, there is a steady decline in the percentage variance. Therefore, in the PCA graph, I only visualize the first three PCA components."
+
+ui <- fluidPage(
+  titlePanel("Students' Performance during the 2005-2006 school year in Portugal"),
+  h4("Introduction"),
+  p(text1),
+  h4("PCA"),
+  p(text2),
+  fluidRow(
+    column(5, plotlyOutput("barplot")),
+    column(7, plotlyOutput("histogram")),
+  )
+)
+server <- function(input, output) {
+  output$barplot <- renderPlotly({
+    ggplotly(p1)
+  })
+  
+  output$histogram <- renderPlotly({
+    ggplotly(p2)
+  })
+}
+
+shinyApp(ui, server)
+```
+
